@@ -1,0 +1,38 @@
+# Lets the orchestrator (running as the 'default' ServiceAccount in
+# debug-agent-hub - the Deployment sets no serviceAccountName of its own)
+# persist team-config.json edits made via the Streamlit "Team Config" UI.
+#
+# /app/config is a ConfigMap volume mount (backing CM: debug-agent-config).
+# Kubernetes always mounts ConfigMap volumes read-only, so the orchestrator
+# can never write that path directly - it PATCHes this one ConfigMap's
+# team-config.json key via the in-cluster K8s API instead (see
+# save_team_config() in orchestrator/app.py). kubelet then re-syncs the
+# mounted file into the pod within ~60-90s on its own; no restart needed.
+#
+# Scoped to exactly one named resource (resourceNames) - the orchestrator
+# cannot read/write any other ConfigMap, Secret, or object in the namespace
+# with this Role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: debug-agent-team-config-editor
+  namespace: debug-agent-hub
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["debug-agent-config"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: debug-agent-team-config-editor-binding
+  namespace: debug-agent-hub
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: debug-agent-hub
+roleRef:
+  kind: Role
+  name: debug-agent-team-config-editor
+  apiGroup: rbac.authorization.k8s.io

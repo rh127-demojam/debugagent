@@ -1,0 +1,170 @@
+# Orchestrator (FastAPI, services/orchestrator/) - the only custom-built
+# component in namespace debug-agent-hub besides debug-agent-ui. Exposes
+# /troubleshoot, /find-matches, /health, /healthz; fans out to the four MCP
+# servers in debug-agent-mcp and to LiteMaaS for classification + RCA
+# synthesis.
+#
+# Build (binary Docker strategy - no git remote required):
+#   oc -n debug-agent-hub new-build --binary --strategy=docker --name=orchestrator
+#   oc -n debug-agent-hub start-build orchestrator --from-dir=services/orchestrator --follow
+# (see manifests/buildconfigs.yaml for the BuildConfig/ImageStream objects themselves)
+#
+# PUBLIC_BASE_URL / UI_URL are environment-specific Route hostnames that do not
+# exist until the Routes below are created. scripts/deploy-fresh-environment.sh
+# creates the Routes first, reads back their generated hosts, then substitutes
+# the __PUBLIC_BASE_URL__ / __UI_URL__ placeholders before applying this
+# Deployment. If applying this file by hand, replace those two placeholders
+# with https://<the two route hosts> first.
+#
+# CONFLUENCE_BASE_URL / SLACK_WORKSPACE_URL are this org's tenant URLs, not
+# secrets - edit the two __PLACEHOLDER__ values below for a different org.
+#
+# Secrets/ConfigMap this Deployment expects to already exist (see
+# manifests/secrets.example.yaml for templates - never commit real values):
+#   - Secret debug-agent-litemaas: LITEMAAS_API_KEY, ATLASSIAN_OAUTH_CLIENT_ID,
+#     ATLASSIAN_OAUTH_CLIENT_SECRET, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN
+#   - ConfigMap debug-agent-litemaas: LITEMAAS_BASE_URL, MODEL_NAME
+#   - ConfigMap debug-agent-config: team-config.json, personas-slim.json,
+#     prompt-templates-slim.json (mounted at /app/config, overrides the
+#     defaults baked into the image at build time - see
+#     manifests/debug-agent-config.example.yaml)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debug-agent-orchestrator
+  namespace: debug-agent-hub
+  labels:
+    app: debug-agent-orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debug-agent-orchestrator
+  template:
+    metadata:
+      labels:
+        app: debug-agent-orchestrator
+    spec:
+      containers:
+        - name: orchestrator
+          image: image-registry.openshift-image-registry.svc:5000/debug-agent-hub/orchestrator:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: NOTEBOOKLM_MAX_NOTEBOOKS
+              value: "5"
+            - name: ATLASSIAN_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: debug-agent-litemaas
+                  key: ATLASSIAN_OAUTH_CLIENT_ID
+            - name: ATLASSIAN_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: debug-agent-litemaas
+                  key: ATLASSIAN_OAUTH_CLIENT_SECRET
+            - name: NOTEBOOKLM_MCP_URL
+              value: "http://nbk-mcp-service.debug-agent-mcp.svc.cluster.local:8000/mcp"
+            - name: LITEMAAS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: debug-agent-litemaas
+                  key: LITEMAAS_API_KEY
+            - name: LITEMAAS_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: debug-agent-litemaas
+                  key: LITEMAAS_BASE_URL
+            - name: MODEL_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: debug-agent-litemaas
+                  key: MODEL_NAME
+            - name: CONFLUENCE_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: debug-agent-litemaas
+                  key: CONFLUENCE_EMAIL
+            - name: CONFLUENCE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: debug-agent-litemaas
+                  key: CONFLUENCE_API_TOKEN
+            - name: CONFLUENCE_BASE_URL
+              value: "__CONFLUENCE_BASE_URL__" # e.g. https://your-domain.atlassian.net
+            - name: CONFLUENCE_MCP_URL
+              value: "http://mcp-confluence-service.debug-agent-mcp.svc.cluster.local:8080/mcp"
+            - name: KCS_MCP_URL
+              value: "http://mcp-redhat-kcs-service.debug-agent-mcp.svc.cluster.local:8080/mcp"
+            - name: SLACK_WORKSPACE_URL
+              value: "__SLACK_WORKSPACE_URL__" # e.g. https://your-workspace.slack.com
+            - name: PUBLIC_BASE_URL
+              value: "__PUBLIC_BASE_URL__" # filled in post-Route-creation by the deploy script
+            - name: UI_URL
+              value: "__UI_URL__" # filled in post-Route-creation by the deploy script
+          volumeMounts:
+            - mountPath: /app/config
+              name: agent-config
+            - mountPath: /var/oauth
+              name: oauth-tokens
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 8
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "50m"
+              memory: "256Mi"
+      volumes:
+        - name: agent-config
+          configMap:
+            name: debug-agent-config
+        - name: oauth-tokens
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: debug-agent-orchestrator
+  namespace: debug-agent-hub
+spec:
+  selector:
+    app: debug-agent-orchestrator
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: debug-agent-orchestrator
+  namespace: debug-agent-hub
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s # RCA synthesis chains up to 3 LLM calls
+spec:
+  to:
+    kind: Service
+    name: debug-agent-orchestrator
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

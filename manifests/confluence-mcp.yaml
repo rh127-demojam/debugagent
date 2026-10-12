@@ -1,0 +1,96 @@
+# Real Confluence MCP (mcp-atlassian). Not Rovo; uses YOUR personal API token.
+# Image ghcr.io/modelcontextprotocol/servers/confluence does not exist — this one does.
+#
+# 1) Create token: https://id.atlassian.com/manage-profile/security/api-tokens
+# 2) Secret (URL must include /wiki):
+#    oc create secret generic confluence-mcp-creds -n debug-agent-mcp `
+#      --from-literal=CONFLUENCE_URL="https://your-domain.atlassian.net/wiki" `
+#      --from-literal=CONFLUENCE_USERNAME="you@example.com" `
+#      --from-literal=CONFLUENCE_API_TOKEN="your-token" `
+#      --from-literal=JIRA_URL="https://your-domain.atlassian.net"
+# 3) oc apply -f confluence-mcp.yaml
+#    ALLOW_GLOBAL_CRED_FALLBACK is required on mcp-atlassian >=0.22 HTTP transport
+#    (ClusterIP only; Hub is the client). Rebuild debug-agent after config apply.
+# 4) Apply debug-agent-config.confluence.yaml and rebuild debug-agent image
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-confluence-server
+  namespace: debug-agent-mcp
+  labels:
+    app: mcp-confluence-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-confluence-server
+  template:
+    metadata:
+      labels:
+        app: mcp-confluence-server
+    spec:
+      containers:
+        - name: mcp-confluence
+          image: ghcr.io/sooperset/mcp-atlassian:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --transport
+            - streamable-http
+            - --port
+            - "8080"
+          env:
+            - name: READ_ONLY_MODE
+              value: "true"
+            - name: TOOLSETS
+              value: "all"
+            - name: ALLOW_GLOBAL_CRED_FALLBACK
+              value: "true"
+            - name: CONFLUENCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: confluence-mcp-creds
+                  key: CONFLUENCE_URL
+            - name: CONFLUENCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: confluence-mcp-creds
+                  key: CONFLUENCE_USERNAME
+            - name: CONFLUENCE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: confluence-mcp-creds
+                  key: CONFLUENCE_API_TOKEN
+            - name: JIRA_URL
+              valueFrom:
+                secretKeyRef:
+                  name: confluence-mcp-creds
+                  key: JIRA_URL
+                  optional: true
+          ports:
+            - containerPort: 8080
+              name: mcp-http
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-confluence-service
+  namespace: debug-agent-mcp
+spec:
+  selector:
+    app: mcp-confluence-server
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http

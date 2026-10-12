@@ -1,0 +1,47 @@
+# debug-agent-config ConfigMap - mounted read-only at /app/config in the
+# orchestrator Deployment (manifests/orchestrator.yaml), overriding the
+# defaults baked into the orchestrator image at build time
+# (services/orchestrator/config/).
+#
+# Live data keys (confirmed against the running cluster - this file
+# previously documented a stale, unrelated prototype's keys):
+#   - team-config.json             editable via the Streamlit "Team Config" UI
+#                                   (see manifests/orchestrator-team-config-rbac.yaml)
+#   - personas-slim.json           12 technical personas for RCA synthesis
+#   - prompt-templates-slim.json   ~25 tier/category/template library
+#   - query-history.json           PURE RUNTIME DATA - written by the
+#                                   orchestrator itself (save_history() in
+#                                   app.py). Do NOT seed this key; the
+#                                   orchestrator treats a missing key/file as
+#                                   an empty history list.
+#
+# DO NOT hand-author this file's data block. Generate it directly from the
+# canonical source files already in this repo (kept in sync with
+# services/orchestrator/config/, which is what's baked into the image):
+#
+#   oc create configmap debug-agent-config -n debug-agent-hub \
+#     --from-file=personas-slim.json \
+#     --from-file=prompt-templates-slim.json \
+#     --from-file=team-config.json \
+#     --dry-run=client -o yaml | oc apply -f -
+#
+# scripts/deploy-fresh-environment.sh runs exactly this command - this
+# .example.yaml exists only as human-readable documentation of the shape,
+# with team-config.json's small real content inlined as a concrete example
+# (personas/prompt-templates are too large to usefully inline here; see the
+# real files at the repo root).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: debug-agent-config
+  namespace: debug-agent-hub
+data:
+  team-config.json: |
+    {
+      "version": "1.0",
+      "confluence": { "spaces": [] },
+      "notebook": { "notebooks": [] },
+      "slack": { "channels": [] }
+    }
+  # personas-slim.json: <generate from repo-root personas-slim.json>
+  # prompt-templates-slim.json: <generate from repo-root prompt-templates-slim.json>

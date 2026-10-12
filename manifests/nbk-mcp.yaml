@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nbk-mcp-server
+  namespace: debug-agent-mcp
+  labels:
+    app: nbk-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nbk-mcp-server
+  template:
+    metadata:
+      labels:
+        app: nbk-mcp-server
+    spec:
+      containers:
+        - name: nbk-mcp
+          image: image-registry.openshift-image-registry.svc:5000/debug-agent-mcp/nbk-mcp:latest
+          imagePullPolicy: Always
+          env:
+            - name: NOTEBOOKLM_DISABLED_GROUPS
+              value: "notebooks_manage,sources_manage,studio,research,sharing,notes,organization,automation"
+            - name: NOTEBOOKLM_DISABLED_TOOLS
+              value: "notebook_get,source_list_drive,source_describe,chat_configure,chat_list,chat_get,chat_export"
+            # notebooklm-mcp-cli refuses to bind to a non-loopback address by
+            # default (no built-in auth - binding externally would expose the
+            # live Google session cookies to anything that can reach the pod).
+            # This override is paired with the NetworkPolicy below, which
+            # restricts ingress on :8000 to only the orchestrator pod.
+            - name: NOTEBOOKLM_ALLOW_EXTERNAL_BIND
+              value: "1"
+          ports:
+            - containerPort: 8000
+              name: mcp-http
+          volumeMounts:
+            - mountPath: /var/nlm-auth-seed
+              name: nlm-auth-seed
+              readOnly: true
+            - mountPath: /var/nlm-auth
+              name: nlm-auth-rw
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "300m"
+              memory: "1Gi"
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+      volumes:
+        - name: nlm-auth-seed
+          secret:
+            secretName: nbk-mcp-creds
+            defaultMode: 420
+            items:
+              - key: auth.json
+                path: auth.json
+              - key: cookies.json
+                path: profiles/default/cookies.json
+              - key: metadata.json
+                path: profiles/default/metadata.json
+        - name: nlm-auth-rw
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nbk-mcp-service
+  namespace: debug-agent-mcp
+spec:
+  selector:
+    app: nbk-mcp-server
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+---
+# nbk-mcp carries a live, mutable NotebookLM/Google session (cookies.json) and
+# the CLI itself has no built-in auth on its MCP endpoint - see
+# NOTEBOOKLM_ALLOW_EXTERNAL_BIND above. This NetworkPolicy is the compensating
+# control: only the orchestrator pod (ns debug-agent-hub) may reach it on
+# :8000. No other NetworkPolicy exists in either namespace today (Confluence
+# and KCS are read-only, token-scoped REST APIs - a materially lower-risk
+# credential class - so they are intentionally left unrestricted).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nbk-mcp-restrict-ingress
+  namespace: debug-agent-mcp
+spec:
+  podSelector:
+    matchLabels:
+      app: nbk-mcp-server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: debug-agent-hub
+          podSelector:
+            matchLabels:
+              app: debug-agent-orchestrator
+      ports:
+        - protocol: TCP
+          port: 8000

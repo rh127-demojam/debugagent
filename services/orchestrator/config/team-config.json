@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "confluence": {
+    "spaces": [
+      {
+        "key": "CloudServ",
+        "name": "Knowledge Management",
+        "category": "other"
+      }
+    ]
+  },
+  "notebook": {
+    "notebooks": [
+      {
+        "key": "5b6650b2-fe19-49cd-b02e-5e0753eb6a91",
+        "name": "NCP 25.4 Reference MOP's",
+        "category": "other"
+      }
+    ]
+  },
+  "slack": {
+    "channels": []
+  }
+}

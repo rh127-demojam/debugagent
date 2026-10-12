@@ -1,0 +1,66 @@
+# Red Hat KCS MCP server (bespoke, built from kcs-mcp/ source - not a public image).
+# Exposes search_kcs/get_kcs as MCP tools over streamable-HTTP, same cross-namespace
+# pattern as mcp-confluence-server. Built via:
+#   oc -n debug-agent-mcp new-build --binary --strategy=docker --name=mcp-redhat-kcs-server
+#   oc -n debug-agent-mcp start-build mcp-redhat-kcs-server --from-dir=kcs-mcp --follow
+#
+# Secret redhat-kcs-mcp-creds (RHKB_OFFLINE_TOKEN) is a Red Hat SSO offline/refresh
+# token from https://access.redhat.com/management/api, copied server-side from the
+# debug-agent-kcs secret in debug-agent-hub (never printed/decoded in transit):
+#   oc -n debug-agent-hub get secret debug-agent-kcs -o jsonpath='{.data.RHKB_OFFLINE_TOKEN}' \
+#     | oc -n debug-agent-mcp create secret generic redhat-kcs-mcp-creds --from-literal=RHKB_OFFLINE_TOKEN=- --dry-run=client -o yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-redhat-kcs-server
+  namespace: debug-agent-mcp
+  labels:
+    app: mcp-redhat-kcs-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-redhat-kcs-server
+  template:
+    metadata:
+      labels:
+        app: mcp-redhat-kcs-server
+    spec:
+      containers:
+        - name: mcp-redhat-kcs
+          image: image-registry.openshift-image-registry.svc:5000/debug-agent-mcp/mcp-redhat-kcs-server:latest
+          imagePullPolicy: Always
+          env:
+            - name: RHKB_OFFLINE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: redhat-kcs-mcp-creds
+                  key: RHKB_OFFLINE_TOKEN
+          ports:
+            - containerPort: 8080
+              name: mcp-http
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-redhat-kcs-service
+  namespace: debug-agent-mcp
+spec:
+  selector:
+    app: mcp-redhat-kcs-server
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http

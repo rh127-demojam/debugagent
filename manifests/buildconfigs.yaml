@@ -1,0 +1,131 @@
+# BuildConfig + ImageStream pairs for the four custom-built images. All four
+# use the Binary/Docker strategy (oc start-build --from-dir=<src> --follow) -
+# no git remote required, matching the live cluster. Webhook triggers are
+# intentionally omitted (the deploy script drives builds directly); add
+# github/generic triggers yourself if you want push-to-build.
+#
+# Confluence (ghcr.io/sooperset/mcp-atlassian) and Slack (quay.io/redhat-ai-tools/slack-mcp)
+# use off-the-shelf public images and need no BuildConfig/ImageStream - see
+# manifests/confluence-mcp.yaml and manifests/slack-mcp.yaml.
+#
+# Build order (after `oc apply -f manifests/buildconfigs.yaml`):
+#   oc -n debug-agent-hub start-build orchestrator      --from-dir=services/orchestrator --follow
+#   oc -n debug-agent-hub start-build debug-agent-ui    --from-dir=services/streamlit-ui  --follow
+#   oc -n debug-agent-mcp  start-build mcp-redhat-kcs-server --from-dir=services/kcs-mcp  --follow
+#   oc -n debug-agent-mcp  start-build nbk-mcp          --from-dir=services/nbk-mcp       --follow
+
+# --- orchestrator (debug-agent-hub) ---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: orchestrator
+  namespace: debug-agent-hub
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: orchestrator
+  namespace: debug-agent-hub
+  labels:
+    build: orchestrator
+spec:
+  runPolicy: Serial
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy: {}
+  output:
+    to:
+      kind: ImageStreamTag
+      name: orchestrator:latest
+  successfulBuildsHistoryLimit: 5
+  failedBuildsHistoryLimit: 5
+---
+# --- debug-agent-ui (debug-agent-hub) ---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: debug-agent-ui
+  namespace: debug-agent-hub
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: debug-agent-ui
+  namespace: debug-agent-hub
+  labels:
+    build: debug-agent-ui
+spec:
+  runPolicy: Serial
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy: {}
+  output:
+    to:
+      kind: ImageStreamTag
+      name: debug-agent-ui:latest
+  successfulBuildsHistoryLimit: 5
+  failedBuildsHistoryLimit: 5
+---
+# --- mcp-redhat-kcs-server (debug-agent-mcp) ---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: mcp-redhat-kcs-server
+  namespace: debug-agent-mcp
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: mcp-redhat-kcs-server
+  namespace: debug-agent-mcp
+  labels:
+    build: mcp-redhat-kcs-server
+spec:
+  runPolicy: Serial
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy: {}
+  output:
+    to:
+      kind: ImageStreamTag
+      name: mcp-redhat-kcs-server:latest
+  successfulBuildsHistoryLimit: 5
+  failedBuildsHistoryLimit: 5
+---
+# --- nbk-mcp (debug-agent-mcp) ---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: nbk-mcp
+  namespace: debug-agent-mcp
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: nbk-mcp
+  namespace: debug-agent-mcp
+  labels:
+    build: nbk-mcp
+spec:
+  runPolicy: Serial
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy: {}
+  output:
+    to:
+      kind: ImageStreamTag
+      name: nbk-mcp:latest
+  successfulBuildsHistoryLimit: 5
+  failedBuildsHistoryLimit: 5

@@ -1,0 +1,147 @@
+# Slack MCP server (redhat-community-ai-tools/slack-mcp), run as a standing
+# in-cluster service - same cross-namespace pattern as mcp-confluence-server /
+# mcp-redhat-kcs-server / nbk-mcp-server. Public image, no custom build needed:
+#   https://github.com/redhat-community-ai-tools/slack-mcp
+#
+# AUTH: browser-session cookies (SLACK_XOXC_TOKEN / SLACK_XOXD_TOKEN) - same
+# credential class as nbk-mcp-server's Google session (expires periodically,
+# refreshed the same way). Produce/refresh the Secret with:
+#   scripts/refresh-slack-creds.ps1 -Mode Export -OutputPath <file>
+# then apply it (never hand-author real token values into this repo):
+#   oc apply -f <file>
+#
+# Confirmed by reading slack_mcp_server.py directly: SLACK_XOXC_TOKEN/
+# SLACK_XOXD_TOKEN set as server-wide env vars take priority over per-request
+# auth headers in EVERY transport mode (including non-stdio) - so the
+# orchestrator's existing cross-namespace _call_mcp() client needs no extra
+# auth headers, same as cfl_tool()/nbk_tool()/kcs_tool().
+#
+# TRANSPORT: deliberately MCP_TRANSPORT=streamable-http here, NOT the "sse"
+# value suggested by the upstream repo's own openshift/template.yaml. Both
+# are supported by the same underlying mcp.server.fastmcp.FastMCP library
+# (mcp==1.27.0, confirmed via pyproject.toml) via `mcp.run(transport=...)`,
+# but "sse" is the OLDER two-endpoint transport (GET /sse to open a stream +
+# a session-scoped POST endpoint handed back via an `event: endpoint`
+# message, with the real JSON-RPC response delivered asynchronously over the
+# open GET connection) - incompatible with the orchestrator's _call_mcp(),
+# which does sequential POSTs to a single URL and expects the response in
+# that POST's own body. "streamable-http" is the newer unified transport
+# that mounts at /mcp by default and matches exactly what _call_mcp() speaks.
+#
+# SLACK_MCP_READ_ONLY=true disables every mutating tool server-side (hub
+# rule: read-only tools only). No Route - ClusterIP only, called
+# cross-namespace by the orchestrator, exactly like the other three MCP
+# servers.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-slack-server
+  namespace: debug-agent-mcp
+  labels:
+    app: mcp-slack-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-slack-server
+  template:
+    metadata:
+      labels:
+        app: mcp-slack-server
+    spec:
+      containers:
+        - name: mcp-slack
+          image: quay.io/redhat-ai-tools/slack-mcp:latest
+          imagePullPolicy: Always
+          env:
+            - name: MCP_TRANSPORT
+              value: "streamable-http"
+            - name: FASTMCP_HOST
+              value: "0.0.0.0"
+            - name: SLACK_MCP_READ_ONLY
+              value: "true"
+            - name: OUTPUT_FORMAT
+              value: "json"
+            # mcp's own TransportSecuritySettings DNS-rebinding check compares
+            # the raw Host header verbatim (it does NOT strip the port the way
+            # Starlette's TrustedHostMiddleware does) - httpx sends a Host
+            # header that includes :8000 since that's a non-default port, so
+            # without the :8000-suffixed entries every cross-namespace call
+            # got rejected with 421 Misdirected Request / Invalid Host header.
+            # Both forms are listed so this keeps working if that behavior
+            # ever changes upstream.
+            - name: ALLOWED_HOSTS
+              value: "mcp-slack-service,mcp-slack-service.debug-agent-mcp,mcp-slack-service.debug-agent-mcp.svc,mcp-slack-service.debug-agent-mcp.svc.cluster.local,mcp-slack-service:8000,mcp-slack-service.debug-agent-mcp:8000,mcp-slack-service.debug-agent-mcp.svc:8000,mcp-slack-service.debug-agent-mcp.svc.cluster.local:8000"
+            - name: SLACK_XOXC_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-slack-creds
+                  key: SLACK_XOXC_TOKEN
+            - name: SLACK_XOXD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-slack-creds
+                  key: SLACK_XOXD_TOKEN
+          ports:
+            - containerPort: 8000
+              name: mcp-http
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-slack-service
+  namespace: debug-agent-mcp
+spec:
+  selector:
+    app: mcp-slack-server
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+---
+# mcp-slack-server carries a live, mutable Slack browser session (xoxc/xoxd) -
+# the same credential risk class as nbk-mcp-server's Google session cookies.
+# Same compensating control: only the orchestrator pod may reach it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mcp-slack-restrict-ingress
+  namespace: debug-agent-mcp
+spec:
+  podSelector:
+    matchLabels:
+      app: mcp-slack-server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: debug-agent-hub
+          podSelector:
+            matchLabels:
+              app: debug-agent-orchestrator
+      ports:
+        - protocol: TCP
+          port: 8000

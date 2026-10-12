@@ -1,0 +1,175 @@
+{
+  "version": "1.0-slim",
+  "source": "Debug Agent Hub -- troubleshooting templates only (Tier 0-3)",
+  "templateCount": 25,
+  "tiers": {
+    "Tier 0: Intake & Retrieval": {
+      "categories": {
+        "Intake & Normalization": {
+          "Incident intake normalizer": {
+            "template": "Normalize this incident into a brief (service, env, severity, timeframe, error signature, recent changes, constraints). Highlight missing info.\n\nservice: [service]\nenv: [env]\nseverity: [severity]\ntimeframe: [timeframe]\nerror/logs:\n[error_signature_or_logs]\nrecent changes:\n[recent_changes]\nconstraints: [constraints]",
+            "placeholders": ["service", "env", "severity", "timeframe", "error_signature_or_logs", "recent_changes", "constraints"],
+            "chain": ["Plan source-grounded retrieval"],
+            "description": "Normalize incident data into structured format"
+          },
+          "Context gap asker": {
+            "template": "Given the normalized incident, ask only for the smallest set of missing fields to proceed.\n\n[normalized_incident_text]",
+            "placeholders": ["normalized_incident_text"],
+            "chain": ["Plan source-grounded retrieval"],
+            "description": "Identify missing context for incident analysis"
+          }
+        },
+        "Retrieval Planning": {
+          "Plan source-grounded retrieval": {
+            "template": "Create precise queries for logs/traces/docs/PRs with filters by service/env/timeframe. Note expected evidence.\n\nInputs:\n- error/logs: [error_signature_or_logs]\n- recent changes: [recent_changes]\n- service: [service], env: [env], timeframe: [timeframe]",
+            "placeholders": ["error_signature_or_logs", "recent_changes", "service", "env", "timeframe"],
+            "chain": ["Synthesize evidence from sources"],
+            "description": "Plan targeted information retrieval strategy"
+          },
+          "Historical incident finder": {
+            "template": "Find similar historical incidents to: [current_incident]\n\nSearch criteria: service=[service], error_pattern=[error_pattern], timeframe=[timeframe]",
+            "placeholders": ["current_incident", "service", "error_pattern", "timeframe"],
+            "chain": [],
+            "description": "Find similar historical incidents for pattern matching"
+          }
+        },
+        "Evidence Synthesis": {
+          "Synthesize evidence from sources": {
+            "template": "Cluster retrieved snippets, extract signals, and identify first divergence. Cite relevant sections by id/line when available.\n\n[retrieved_snippets_or_notes]",
+            "placeholders": ["retrieved_snippets_or_notes"],
+            "chain": ["Generate ranked hypotheses"],
+            "description": "Synthesize collected evidence into actionable insights"
+          },
+          "Timeline correlator": {
+            "template": "Correlate incident events with deploys/feature rollouts over [timeframe]. Highlight suspicious overlaps.\n\nIncidents/Signals:\n[incident_events]\n\nDeploys/Flags:\n[deploys_or_flag_rollouts]",
+            "placeholders": ["incident_events", "deploys_or_flag_rollouts", "timeframe"],
+            "chain": ["Generate ranked hypotheses"],
+            "description": "Correlate incidents with deployment timeline"
+          }
+        }
+      }
+    },
+    "Tier 1: Get Facts & Diagnose": {
+      "categories": {
+        "Log & Error Analysis": {
+          "Get error code": {
+            "template": "Based on the source material, what is the meaning of error code \"[error_code]\" for the \"[product_name]\" product? What are the top 3 recommended initial diagnostic steps?",
+            "placeholders": ["error_code", "product_name"],
+            "chain": ["Generate a step-by-step runbook for this error"],
+            "description": "Understand error codes and initial diagnostic steps"
+          },
+          "Diff good vs bad logs": {
+            "template": "Compare these logs. Highlight first divergence and likely cause.\n\nBad:\n[bad_log_content]\n\nGood:\n[good_log_content]",
+            "placeholders": ["bad_log_content", "good_log_content"],
+            "chain": ["Perform a guided RCA"],
+            "description": "Compare healthy vs problematic logs to identify issues"
+          },
+          "Stack trace explainer": {
+            "template": "Explain this stack trace for [product_name]. Identify failing frame and missing context.\n\n[stack_trace]",
+            "placeholders": ["product_name", "stack_trace"],
+            "chain": ["Perform a guided RCA"],
+            "description": "Analyze and explain stack trace failures"
+          },
+          "Resource pressure triage": {
+            "template": "From the provided metrics snippet and changes, identify resource pressure and likely bottleneck for [service] in [env].\n\n[metrics_snippet]\n\nRecent changes:\n[recent_changes]",
+            "placeholders": ["metrics_snippet", "recent_changes", "service", "env"],
+            "chain": ["Perform a guided RCA"],
+            "description": "Analyze resource pressure and identify bottlenecks"
+          }
+        },
+        "Fact & Definition Retrieval": {
+          "Get component function": {
+            "template": "According to the source document, explain the function of the \"[component_name]\" component and list its primary dependencies.",
+            "placeholders": ["component_name"],
+            "chain": [],
+            "description": "Get detailed component information from documentation"
+          },
+          "Get standard procedure": {
+            "template": "Based on the source material, what is the standard procedure for \"[specific_task]\"?",
+            "placeholders": ["specific_task"],
+            "chain": [],
+            "description": "Retrieve standard operating procedures"
+          }
+        },
+        "Configuration Checks": {
+          "Config drift check": {
+            "template": "Compare config between [env_A] and [env_B] for [product_name]. List diffs and impact.\n\nConfig A:\n[config_A]\n\nConfig B:\n[config_B]",
+            "placeholders": ["product_name", "env_A", "env_B", "config_A", "config_B"],
+            "chain": ["Validate a hypothesis about the root cause"],
+            "description": "Compare configurations across environments"
+          }
+        }
+      }
+    },
+    "Tier 2: Root Cause Analysis": {
+      "categories": {
+        "Guided & Comparative Analysis": {
+          "Perform a guided RCA": {
+            "template": "Let's think step-by-step to find the root cause. First, analyze the logs for error messages related to [problem_description]. Second, check the deployment history for recent changes to the [product_name]. Third, based on the documentation, list the most likely components that could cause this. Finally, conclude with the most probable root cause.",
+            "placeholders": ["problem_description", "product_name"],
+            "chain": ["Validate a hypothesis about the root cause"],
+            "description": "Systematic step-by-step root cause analysis"
+          },
+          "Validate a hypothesis about the root cause": {
+            "template": "My hypothesis is that the root cause is [suspected_cause]. Based on the source documents, find all evidence that supports or refutes this hypothesis. Present the findings in two lists: 'Supporting Evidence' and 'Contradictory Evidence'.",
+            "placeholders": ["suspected_cause"],
+            "chain": [],
+            "description": "Validate root cause hypotheses with evidence"
+          },
+          "Generate ranked hypotheses": {
+            "template": "From these signals and suspect changes, produce ranked hypotheses with confidence and what to check next.\n\nSignals:\n[signals_summary]\n\nSuspect changes:\n[suspect_changes]",
+            "placeholders": ["signals_summary", "suspect_changes"],
+            "chain": ["Design minimal confirmation experiments"],
+            "description": "Generate ranked hypotheses for root cause analysis"
+          }
+        },
+        "Change Mapping": {
+          "Map suspect change from diff/PRs": {
+            "template": "From the diff/PR list, map which change is most likely causal within [timeframe] for [component]. Explain why.\n\n[diff_text_or_commit_list]",
+            "placeholders": ["diff_text_or_commit_list", "timeframe", "component"],
+            "chain": ["Generate ranked hypotheses"],
+            "description": "Map suspect changes from code diffs and PRs"
+          },
+          "Rollback decision matrix": {
+            "template": "Provide a decision matrix (impact, reversibility, risk, blast radius) to decide rollback vs forward-fix.\n\nImpact: [impact]\nReversibility: [reversibility]\nRisk: [risk]\nBlast radius: [blast_radius]",
+            "placeholders": ["impact", "reversibility", "risk", "blast_radius"],
+            "chain": [],
+            "description": "Decision matrix for rollback vs forward-fix"
+          }
+        }
+      }
+    },
+    "Tier 3: How-To & Resolutions": {
+      "categories": {
+        "Procedural Guide Generation": {
+          "Generate a step-by-step runbook for this error": {
+            "template": "Based on the provided source document, generate a precise, step-by-step runbook for resolving error \"[error_code]\" on the \"[product_name]\" product. The audience is a junior engineer.",
+            "placeholders": ["error_code", "product_name"],
+            "chain": [],
+            "description": "Create detailed resolution runbooks"
+          },
+          "Generate a rollback plan": {
+            "template": "Generate a detailed rollback plan for the recent deployment of \"[product_name]\" in the \"[environment]\" environment. The plan should be based on the procedures outlined in the source document.",
+            "placeholders": ["product_name", "environment"],
+            "chain": [],
+            "description": "Create comprehensive rollback procedures"
+          }
+        },
+        "Automation": {
+          "Kubernetes troubleshooting automator": {
+            "template": "Generate Kubernetes troubleshooting script for: [k8s_issue]\n\nCluster: [cluster_name]\nNamespace: [namespace]\nResource type: [resource_type]\n\nInclude kubectl commands and diagnostics.",
+            "placeholders": ["k8s_issue", "cluster_name", "namespace", "resource_type"],
+            "chain": [],
+            "description": "Automated Kubernetes troubleshooting procedures"
+          },
+          "Security incident responder": {
+            "template": "Generate security incident response plan for: [security_incident]\n\nIncident type: [incident_type]\nAffected systems: [affected_systems]\nSeverity: [severity_level]",
+            "placeholders": ["security_incident", "incident_type", "affected_systems", "severity_level"],
+            "chain": [],
+            "description": "Automated security incident response procedures"
+          }
+        }
+      }
+    }
+  }
+}
