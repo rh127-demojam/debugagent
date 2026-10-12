@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debug-agent-ui
+  namespace: debug-agent-hub
+  labels:
+    app: debug-agent-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debug-agent-ui
+  template:
+    metadata:
+      labels:
+        app: debug-agent-ui
+    spec:
+      containers:
+        - name: debug-agent-ui
+          image: image-registry.openshift-image-registry.svc:5000/debug-agent-hub/debug-agent-ui:latest
+          imagePullPolicy: Always
+          env:
+            - name: ORCHESTRATOR_URL
+              value: "http://debug-agent-orchestrator.debug-agent-hub.svc.cluster.local:8080"
+          ports:
+            - containerPort: 8501
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: debug-agent-ui
+  namespace: debug-agent-hub
+spec:
+  selector:
+    app: debug-agent-ui
+  ports:
+    - port: 8501
+      targetPort: 8501
+      name: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: debug-agent-ui
+  namespace: debug-agent-hub
+spec:
+  to:
+    kind: Service
+    name: debug-agent-ui
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

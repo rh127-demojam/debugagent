@@ -1,0 +1,19 @@
+# The two namespaces the whole app lives in. debug-agent-hub is the
+# user-facing side (UI + orchestrator); debug-agent-mcp is the backend MCP
+# server fleet the orchestrator calls cross-namespace. Split this way so the
+# four MCP servers (two of which carry live, mutable third-party session
+# credentials - Slack and NotebookLM) can be locked down with tighter
+# NetworkPolicies/RBAC independent of the user-facing namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: debug-agent-hub
+  labels:
+    kubernetes.io/metadata.name: debug-agent-hub
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: debug-agent-mcp
+  labels:
+    kubernetes.io/metadata.name: debug-agent-mcp

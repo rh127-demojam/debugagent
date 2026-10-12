@@ -1,0 +1,45 @@
+{
+  "version": "1.0",
+  "confluence": {
+    "spaces": [
+      {
+        "key": "CloudServ",
+        "name": "Knowledge Management",
+        "category": "other"
+      }
+    ]
+  },
+  "notebook": {
+    "notebooks": [
+      {
+        "key": "95aef976-6088-4608-9543-cd471ebc4292",
+        "name": "NCS Upgrade Knowledge Bank",
+        "category": "other"
+      },
+      {
+        "key": "f7382da5-a50d-4c98-a3c5-ff11fe410ef4",
+        "name": "CBIS Upgrade Knowledge bank",
+        "category": "other"
+      },
+      {
+        "key": "90e72e16-3b13-49bd-a568-c1b22173eec3",
+        "name": "Red Hat Global Telco CDS Knowledge Management",
+        "category": "other"
+      },
+      {
+        "key": "184ae7c7-769a-477f-ba1a-4f03394ae9bf",
+        "name": "CBIS/NCS Non Blueprint Certification[NBP COE] Knowledge Bank",
+        "category": "other"
+      },
+      {
+        "key": "5b6650b2-fe19-49cd-b02e-5e0753eb6a91",
+        "name": "NCP 25.4 Reference MOP's",
+        "category": "other"
+      }
+
+    ]
+  },
+  "slack": {
+    "channels": []
+  }
+}
